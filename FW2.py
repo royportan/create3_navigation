@@ -14,7 +14,7 @@ import numpy as np
 from geometry_msgs.msg import Twist
 import time
 import matplotlib.pyplot as plt
-
+import random
 # Input your namespace here
 namespace = ''
 
@@ -28,7 +28,9 @@ class Follow_Wall(Node):
 		self.sc = self.ax.scatter([], [])
 		self.x_data = []
 		self.y_data = []
+		self.state = 'Random'
 		self.T = np.identity(3)
+		self.side = 'L'
 		self.linear_velocity_publisher = self.create_publisher(Twist, '/cmd_vel', 10)
 		#C3twist = Twist()
 		#twist.linear.x  = 0.05 
@@ -122,8 +124,27 @@ class Follow_Wall(Node):
 		#print("T0")
 		#print(self.T0)
 		#self.printIR(msg)
-		self.processIR()
+		#self.processIR()
+		self.getStates()
+		self.states()
 		#print(self.ir[1])
+	def states(self):
+		if self.state == 'FW':
+			self.processIR()
+		else:
+			if self.state == 'OA':
+				self.avoid_obs()
+			else: # wander randomly
+				self.wander()
+	def setStates(self):
+		if min(self.D) <= 0.15:
+			self.state = 'OA'
+			return
+		if min(self.D) >= 0.6:
+			self.state = 'Random'
+			return
+		self.state = "FW"
+		return
 	def printIR(self, msg):
 		print('Printing IR sensor readings:')
 		for reading in msg.readings: 
@@ -134,11 +155,11 @@ class Follow_Wall(Node):
 		count = 0
 		u_fw = np.array([0,0])
 		p = np.zeros((2,3))
-	
+		side = 'L'
 		for d in self.D:
 			if count == 2 :
 				break
-			if d >= 0.025 and d <= 0.6:
+			if d >= 0.015 and d <= 0.6:
 				ir_vec = np.ones((3))
 				ir_vec[0] = d
 				ir_vec[1] = 0
@@ -162,23 +183,35 @@ class Follow_Wall(Node):
 			#else:
 				order = p[0,2]
 				if order == 0:
+					self.side = 'L';
 					self.move(0.15,0.05)
 				if order == 1:
+					self.side = 'L'
 					self.move(-0.15,0.05)
 				if order == 2:
+					self.side = 'L'
 					self.move(-0.2,-0.05)
 				if order == 3:
+					self.side = 'L'
 					self.move(-0.2,-0.03)
 				if order == 2.5:
+					self.side = 'R'
 					self.move(0.2,-0.05)
 				if order == 1.5:
+					self.side = 'R'
 					self.move(0.15,0.05)
 				if order == 0.5:
+					self.side = 'R'
 					self.move(-0.15,0.05)
 		if count < 1:
-			twist = Twist()
-			twist.linear.x = 0.2
-			self.linear_velocity_publisher.publish(twist)
+			# twist = Twist()
+			# twist.linear.x = 0.2
+			# self.linear_velocity_publisher.publish(twist)
+			self.move_distance(0.15)
+			if self.side == 'L':
+				self.turnAngle(pi/2)
+			else:
+				self.turnAngle(-pi/2)
 		if count == 2:
 			if p[0,2] > p[1,2]:
 				u_fw = p[0,:2] - p[1,:2]
@@ -211,6 +244,15 @@ class Follow_Wall(Node):
 		#Ltwist = Twist()
 		#Ltwist.linear.x  = 0.2
 		#self.linear_velocity_publisher.publish(Ltwist)
+	def avoid_obs(self):
+		self.move(0,-0.1)
+		self.turnAngle(pi)
+		self.move_distance(0.25)
+	def wander(self):
+		angle = random.randrange(-pi/2,pi/2)
+		distance = random.randrange(0,0.5)
+		self.turnAngle(angle)
+		self.move_distance(distance)
 	def move_forward(self, duration, speed=0.2):
 		twist = Twist()
 		twist.linear.x = speed  # Move forward by setting linear.x
@@ -220,6 +262,9 @@ class Follow_Wall(Node):
 		    self.linear_velocity_publisher.publish(twist)
 		    time.sleep(1.0 / rate)
 		self.stop_robot() 
+	def move_distance(self,distance,speed=0.2):
+		duration = distance/speed
+		self.move_forward(duration,speed)
 	def turnAngle(self,angle, angular_speed=0.1):
 		curr_angle = self.round_angle(self.heading)
 		target_angle =self.round_angle(self.heading + angle )
